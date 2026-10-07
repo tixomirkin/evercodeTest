@@ -1,0 +1,483 @@
+openapi: 3.0.3
+info:
+  title: Crypto Price Tracker API
+  version: 1.0.0
+  description: |
+    REST API backend service for tracking and aggregating cryptocurrency prices using the CoinMarketCap API.
+    Features authentication via Bearer token (API Key), CRUD for tracked cryptocurrencies, live price fetching, historical price logging, and automated background synchronization.
+servers:
+  - url: http://localhost:3000
+    description: Local Development Server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Service Health Check
+      description: Returns service status, uptime, and state of database and background worker.
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  timestamp:
+                    type: string
+                    example: '2026-10-08T12:00:00.000Z'
+                  uptime:
+                    type: number
+                    example: 124.5
+                  services:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        example: ok
+                      backgroundSync:
+                        type: string
+                        example: running
+
+  /api/v1/cryptocurrencies:
+    get:
+      summary: List all tracked cryptocurrencies
+      description: Retrieves all cryptocurrencies currently tracked by the system along with their latest recorded price.
+      responses:
+        '200':
+          description: List of tracked cryptocurrencies
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  count:
+                    type: integer
+                    example: 2
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CryptoWithLatestPrice'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+    post:
+      summary: Add a new cryptocurrency to track
+      description: Registers a new cryptocurrency by symbol and name for tracking.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCryptoDto'
+      responses:
+        '201':
+          description: Cryptocurrency registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Cryptocurrency'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '409':
+          description: Cryptocurrency with this symbol is already tracked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/cryptocurrencies/sync:
+    post:
+      summary: Trigger manual price synchronization
+      description: Fetches current prices for all tracked cryptocurrencies from CoinMarketCap and saves them into the database.
+      responses:
+        '200':
+          description: Synchronization finished
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Prices synchronized successfully
+                  data:
+                    type: object
+                    properties:
+                      updated:
+                        type: integer
+                        example: 3
+                      failed:
+                        type: integer
+                        example: 0
+                      total:
+                        type: integer
+                        example: 3
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '502':
+          $ref: '#/components/responses/ExternalApiError'
+
+  /api/v1/cryptocurrencies/{id}:
+    get:
+      summary: Get cryptocurrency details
+      parameters:
+        - $ref: '#/components/parameters/CryptoId'
+      responses:
+        '200':
+          description: Cryptocurrency details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/CryptoWithLatestPrice'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+    put:
+      summary: Update cryptocurrency
+      parameters:
+        - $ref: '#/components/parameters/CryptoId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCryptoDto'
+      responses:
+        '200':
+          description: Cryptocurrency updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Cryptocurrency'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: Target symbol is already used by another record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete cryptocurrency
+      description: Removes the cryptocurrency and its associated historical prices.
+      parameters:
+        - $ref: '#/components/parameters/CryptoId'
+      responses:
+        '200':
+          description: Cryptocurrency deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Cryptocurrency with ID 1 deleted successfully
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /api/v1/cryptocurrencies/{id}/price:
+    post:
+      summary: Fetch and record latest price from CoinMarketCap
+      description: Fetches real-time price for this cryptocurrency from CoinMarketCap API and records a new entry in price_history.
+      parameters:
+        - $ref: '#/components/parameters/CryptoId'
+      responses:
+        '200':
+          description: Current price fetched and recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/PriceRecord'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '502':
+          $ref: '#/components/responses/ExternalApiError'
+
+  /api/v1/cryptocurrencies/{id}/history:
+    get:
+      summary: Get historical prices for cryptocurrency
+      description: Returns paginated price history with optional date range filters and sorting.
+      parameters:
+        - $ref: '#/components/parameters/CryptoId'
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+          description: Page number
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          description: Items per page
+        - name: fromDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Start timestamp (ISO 8601)
+        - name: toDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: End timestamp (ISO 8601)
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+          description: Sort order by recorded date
+      responses:
+        '200':
+          description: Price history list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  total:
+                    type: integer
+                    example: 45
+                  page:
+                    type: integer
+                    example: 1
+                  limit:
+                    type: integer
+                    example: 20
+                  totalPages:
+                    type: integer
+                    example: 3
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PriceRecord'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Key / Bearer Token
+      description: Enter the Bearer token configured in API_BEARER_TOKEN
+
+  parameters:
+    CryptoId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+      description: Numeric ID of the cryptocurrency
+
+  schemas:
+    Cryptocurrency:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        symbol:
+          type: string
+          example: BTC
+        name:
+          type: string
+          example: Bitcoin
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-10-08T12:00:00.000Z'
+        last_updated_at:
+          type: string
+          format: date-time
+          example: '2026-10-08T12:00:00.000Z'
+
+    CryptoWithLatestPrice:
+      allOf:
+        - $ref: '#/components/schemas/Cryptocurrency'
+        - type: object
+          properties:
+            latest_price:
+              type: number
+              nullable: true
+              example: 65420.50
+            currency:
+              type: string
+              example: USD
+
+    CreateCryptoDto:
+      type: object
+      required:
+        - symbol
+        - name
+      properties:
+        symbol:
+          type: string
+          minLength: 1
+          maxLength: 15
+          example: BTC
+          description: Ticker symbol (alphanumeric)
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Bitcoin
+
+    UpdateCryptoDto:
+      type: object
+      properties:
+        symbol:
+          type: string
+          minLength: 1
+          maxLength: 15
+          example: BTC
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Bitcoin Core
+
+    PriceRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 10
+        cryptocurrency_id:
+          type: integer
+          example: 1
+        symbol:
+          type: string
+          example: BTC
+        price:
+          type: number
+          example: 65420.50
+        currency:
+          type: string
+          example: USD
+        recorded_at:
+          type: string
+          format: date-time
+          example: '2026-10-08T12:00:00.000Z'
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            name:
+              type: string
+              example: NotFoundError
+            message:
+              type: string
+              example: Cryptocurrency with ID 999 not found
+            details:
+              type: object
+              nullable: true
+
+  responses:
+    UnauthorizedError:
+      description: Authentication failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    ValidationError:
+      description: Input validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    ExternalApiError:
+      description: CoinMarketCap API error or unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
