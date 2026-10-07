@@ -1,0 +1,12 @@
+node_modules
+.pnpm-store
+dist
+data
+*.db
+*.sqlite*
+.git
+.env
+coverage
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
