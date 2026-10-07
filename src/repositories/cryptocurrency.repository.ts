@@ -3,10 +3,14 @@ import { getDatabase } from '../db/database';
 import { Cryptocurrency, CryptoWithLatestPrice } from '../types';
 
 export class CryptocurrencyRepository {
-  private db: DatabaseType;
+  private customDb?: DatabaseType;
 
   constructor(db?: DatabaseType) {
-    this.db = db || getDatabase();
+    this.customDb = db;
+  }
+
+  private get db(): DatabaseType {
+    return this.customDb || getDatabase();
   }
 
   create(symbol: string, name: string): Cryptocurrency {
