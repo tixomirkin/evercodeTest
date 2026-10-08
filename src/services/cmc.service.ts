@@ -91,29 +91,31 @@ export class CoinMarketCapService {
   }
 
   private handleAxiosError(error: any): never {
-    if (axios.isAxiosError(error)) {
-      const axiosErr = error as AxiosError<any>;
+    const isTimeout =
+      error.code === 'ECONNABORTED' ||
+      (typeof error.message === 'string' && error.message.toLowerCase().includes('timeout'));
 
-      if (axiosErr.code === 'ECONNABORTED' || (axiosErr.message && axiosErr.message.includes('timeout'))) {
-        throw new ExternalApiError('CoinMarketCap API request timed out', 504, {
-          timeout: config.CMC_TIMEOUT_MS,
-        });
-      }
+    if (isTimeout) {
+      throw new ExternalApiError('CoinMarketCap API request timed out', 504, {
+        timeout: config.CMC_TIMEOUT_MS,
+      });
+    }
 
-      if (!axiosErr.response) {
+    if (axios.isAxiosError(error) || error.isAxiosError) {
+      if (!error.response) {
         throw new ExternalApiError(
-          `Unable to reach CoinMarketCap API: ${axiosErr.message || 'Network error'}`,
+          `Unable to reach CoinMarketCap API: ${error.message || 'Network error'}`,
           503,
-          { code: axiosErr.code }
+          { code: error.code }
         );
       }
 
-      const status = axiosErr.response.status;
-      const responseBody = axiosErr.response.data;
+      const status = error.response.status;
+      const responseBody = error.response.data;
       const errorMessage =
         responseBody?.status?.error_message ||
         responseBody?.message ||
-        axiosErr.message ||
+        error.message ||
         'CoinMarketCap API request failed';
 
       if (status === 401) {
